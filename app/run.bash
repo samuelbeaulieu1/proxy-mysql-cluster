@@ -24,7 +24,7 @@ set +a
 if [ $BUILD = true ]; then
     echo "Building proxy"
     cd src
-    go build -v -o ../proxy 2>/dev/null >&2
+    sudo go build -v -o ../proxy
     cd ..
 fi
 
