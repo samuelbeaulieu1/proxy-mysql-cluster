@@ -59,7 +59,7 @@ func (s *slaveProxy) startMysqlClient(query *slaveQuery) {
 	pwd := fmt.Sprintf("-p'%s'", query.slave.password)
 	port := fmt.Sprintf("-P %s", s.port)
 	queryStr := fmt.Sprintf("-e '%s'", query.query)
-	mysql := fmt.Sprintf("mysql %s %s %s %s %s", port, user, pwd, query.database, queryStr)
+	mysql := fmt.Sprintf("mysql %s -h 127.0.0.1 %s %s %s %s", port, user, pwd, query.database, queryStr)
 	cmd := exec.Command("bash", "-c", mysql)
 
 	cmd.Run()
