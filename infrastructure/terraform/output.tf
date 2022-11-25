@@ -14,3 +14,8 @@ output "mysql-ndb-domain" {
         for node in local.data_nodes : module.ec2_mysql_cluster_ndb[node].public_dns
     ]
 }
+
+output "mysql-proxy" {
+    description = "MYSQL proxy domain name"
+    value       = module.ec2_mysql_proxy.public_dns
+}

@@ -12,6 +12,7 @@ locals {
   app_id = "proxy-mysql-cluster"
 
   standalone_install_script_path    = "../standalone_install.sh"
+  proxy_install_script_path  = "../proxy_install.sh"
   cluster_mgmt_install_script_path  = "../mgmt_install.sh"
   cluster_ndb_install_script_path   = "../ndb_install.sh"
 
@@ -42,6 +43,35 @@ module "ec2_mysql_standalone" {
   user_data = templatefile("${local.standalone_install_script_path}", {
     REGION                   = var.region,
     SQL_PASSWORD             = var.sql_password
+  })
+
+  tags = {
+    Terraform       = "true"
+    Environment     = "dev"
+  }
+}
+
+module "ec2_mysql_proxy" {
+  source  = "terraform-aws-modules/ec2-instance/aws"
+  version = "~> 3.0"
+
+  name = "mysql-proxy"
+
+  ami                         = local.ubuntu20_ami
+  instance_type               = "t2.large"
+  key_name                    = module.key_pair.key_pair_name
+  vpc_security_group_ids      = [module.sg.id]
+  subnet_id                   = module.vpc.public_subnets[0]
+  associate_public_ip_address = true
+
+  user_data = templatefile("${local.proxy_install_script_path}", {
+    SQL_PASSWORD             = var.sql_password,
+    SQL_USER                 = local.sql_user,
+    MASTER_NODE_IP           = local.mgmt_node_dns,
+    N_SLAVES                 = 3,
+    DATA_NODE1_IP            = local.data_ips[0],
+    DATA_NODE2_IP            = local.data_ips[1],
+    DATA_NODE3_IP            = local.data_ips[2]
   })
 
   tags = {
