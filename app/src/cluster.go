@@ -92,7 +92,7 @@ func (c *Cluster) SelectSlave() *Host {
 }
 
 func (c *Cluster) selectRandomSlave() *Host {
-	index := rand.Intn(2)
+	index := rand.Intn(len(c.slaves))
 
 	return c.slaves[index]
 }
