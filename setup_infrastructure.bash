@@ -65,6 +65,8 @@ if [ $DEPLOY = true ]; then
         -v $(pwd)/app/:/root/app \
         -t $TERRAFORM_IMAGE_TAG \
         -chdir=/root/infrastructure/terraform/ apply -auto-approve
+
+    ./parse_key.bash
 fi
 
 if [ $TEARDOWN = true ]; then
