@@ -7,23 +7,36 @@ import (
 	"net"
 	"regexp"
 	"strings"
+	"sync"
 )
 
-type proxy struct {
-	port       string
-	readWriter ReaderWriter
+type proxyInstance struct {
+	proxy *proxy
+
+	mysql  net.Conn
+	client net.Conn
+
+	mysqlWriterChan      chan byte
+	mysqlHasPendingQuery bool
+	mysqlLock            sync.Mutex
+	database             string
 
 	nullDbPacket []byte
 }
 
-var proxyInstance *proxy
+type proxy struct {
+	port       string
+	readWriter ReaderWriter
+}
+
+var mysqlProxy *proxy
 
 func GetProxy() *proxy {
-	return proxyInstance
+	return mysqlProxy
 }
 
 func StartProxy(port string, readWriter ReaderWriter) error {
-	proxyInstance = &proxy{
+	mysqlProxy = &proxy{
 		port:       port,
 		readWriter: readWriter,
 	}
@@ -41,7 +54,7 @@ func StartProxy(port string, readWriter ReaderWriter) error {
 			continue
 		}
 
-		go proxyInstance.Handle(conn)
+		go mysqlProxy.Handle(conn)
 	}
 }
 
@@ -58,53 +71,104 @@ func (p *proxy) Handle(conn net.Conn) {
 	if err != nil {
 		return
 	}
-	db := p.getDatabase(mysql)
 
-	p.handleProxyLoop(db, conn, mysql)
+	instance := &proxyInstance{
+		proxy: p,
+
+		client: conn,
+		mysql:  mysql,
+
+		mysqlWriterChan:      make(chan byte),
+		mysqlHasPendingQuery: false,
+		mysqlLock:            sync.Mutex{},
+	}
+	instance.database = instance.getDatabase()
+	instance.handleProxyLoop()
 }
 
-func (p *proxy) handleProxyLoop(db string, conn net.Conn, mysql net.Conn) {
-	queriedNewDb := false
+func (p *proxyInstance) handleProxyLoop() {
+	go p.handleClientLoop()
+	go p.handleMysqlServerLoop()
+}
+
+func (p *proxyInstance) handleClientLoop() {
 	for {
 		// Client request
-		buf, err := p.readWriter.Read(conn)
+		buf, err := p.proxy.readWriter.Read(p.client)
 		if err != nil {
 			break
 		}
-		selectDbRegex, _ := regexp.Compile(`^(select database\(\))`)
-		regex, _ := regexp.Compile("^(select )")
-		query := strings.TrimSpace(string(buf.Bytes()[5:len(buf.Bytes())]))
-		queriedNewDb = selectDbRegex.MatchString(strings.ToLower(query))
-		isSelect := regex.MatchString(strings.ToLower(query))
-		if isSelect {
-			// Send client request to slave
-			slave := GetCluster().SelectSlave()
-			result := slave.HandleQuery(query, db)
 
-			// Send slave response to client
-			p.readWriter.Write(bytes.NewBuffer(result), conn)
-		} else {
-			// Send client request to server
-			p.readWriter.Write(buf, mysql)
-			// Send server response to client
-			p.readWriter.ReadWrite(mysql, conn)
-		}
+		queriedNewDb, isSelect := p.handleClientQuery(buf)
 		if queriedNewDb {
-			// Write client response for DB change
-			p.readWriter.ReadWrite(conn, mysql)
-			// Write to client new DB change
-			p.readWriter.ReadWrite(mysql, conn)
-			db = p.getDatabase(mysql)
+			// // Write client response for DB change
+			p.proxy.readWriter.ReadWrite(p.client, p.mysql)
+			// // Write to client new DB change
+			p.proxy.readWriter.ReadWrite(p.mysql, p.client)
+			p.database = p.getDatabase()
+		} else if !isSelect {
+			go p.queueMysqlResponse()
 		}
 	}
 }
 
-func (p *proxy) getDatabase(mysql net.Conn) string {
+func (p *proxyInstance) handleMysqlServerLoop() {
+	for {
+		p.setMysqlServerBusyStatus(false)
+
+		<-p.mysqlWriterChan
+
+		p.setMysqlServerBusyStatus(true)
+		p.proxy.readWriter.ReadWrite(p.mysql, p.client)
+	}
+}
+
+func (p *proxyInstance) handleClientQuery(req *bytes.Buffer) (bool, bool) {
+	selectDbRegex, _ := regexp.Compile(`^(select database\(\))`)
+	regex, _ := regexp.Compile("^(select )")
+	query := strings.TrimSpace(string(req.Bytes()[5:len(req.Bytes())]))
+	queriedNewDb := selectDbRegex.MatchString(strings.ToLower(query))
+	isSelect := regex.MatchString(strings.ToLower(query))
+
+	if isSelect {
+		slave := GetCluster().SelectSlave()
+		log.Printf("[%s][%s] Executing '%s'\n", slave.hostType, fmt.Sprintf("%s:%d", slave.host, slave.port), query)
+
+		// Send client request to slave
+		result := slave.HandleQuery(query, p.database)
+		// Send slave response to client
+		p.proxy.readWriter.Write(bytes.NewBuffer(result), p.client)
+	} else {
+		master := GetCluster().Master
+		log.Printf("[%s][%s] Executing '%s'\n", master.hostType, fmt.Sprintf("%s:%d", master.host, master.port), query)
+
+		// Send client request to server
+		p.proxy.readWriter.Write(req, p.mysql)
+	}
+
+	return queriedNewDb, isSelect
+}
+
+func (p *proxyInstance) setMysqlServerBusyStatus(busy bool) {
+	p.mysqlLock.Lock()
+	p.mysqlHasPendingQuery = busy
+	p.mysqlLock.Unlock()
+}
+
+func (p *proxyInstance) queueMysqlResponse() {
+	p.mysqlLock.Lock()
+	if !p.mysqlHasPendingQuery {
+		p.mysqlWriterChan <- 1
+	}
+	p.mysqlLock.Unlock()
+}
+
+func (p *proxyInstance) getDatabase() string {
 	if p.nullDbPacket == nil {
 		p.nullDbPacket = GetCluster().Master.HandleQuery("SELECT DATABASE()", "")
 	}
-	p.readWriter.ExecQuery(mysql, "SELECT DATABASE()")
-	res, _ := p.readWriter.Read(mysql)
+	p.proxy.readWriter.ExecQuery(p.mysql, "SELECT DATABASE()")
+	res, _ := p.proxy.readWriter.Read(p.mysql)
 	if res == nil || res.String() == string(p.nullDbPacket) {
 		return ""
 	}

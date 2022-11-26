@@ -11,6 +11,8 @@ type Host struct {
 	port     int
 	user     string
 	password string
+
+	hostType string
 }
 
 func (h *Host) HandleQuery(clientQuery string, database string) []byte {

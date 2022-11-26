@@ -63,6 +63,7 @@ func InitCluster(mode ClusterMode) {
 			port:     3306,
 			user:     sqlUser,
 			password: sqlPwd,
+			hostType: "SLAVE",
 		})
 	}
 
@@ -73,6 +74,7 @@ func InitCluster(mode ClusterMode) {
 			port:     3306,
 			user:     sqlUser,
 			password: sqlPwd,
+			hostType: "MASTER",
 		},
 		slaves: slaves,
 	}
