@@ -18,25 +18,30 @@ echo \
 sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
+# Getting Sakila DB
 wget https://downloads.mysql.com/docs/sakila-db.tar.gz
 
 tar -zxvf sakila-db.tar.gz
 
+# Setting up MySQL entrypoint scripts to setup Sakila
 sudo mv sakila-db/sakila-schema.sql sakila-db/01-sakila-schema.sql 
 sudo mv sakila-db/sakila-data.sql sakila-db/02-sakila-data.sql 
 
+# Starting MySQL stand-alone server
 sudo docker run --name mysql-standalone \
                 --env MYSQL_ROOT_PASSWORD=${SQL_PASSWORD} \
                 -v $(pwd)/sakila-db:/docker-entrypoint-initdb.d \
                 -p 3306:3306 \
                 -d mysql:8.0.31
 
+# Setting up sysbench user
 tee -a /home/ubuntu/setup_sysbench.sql <<EOT
 CREATE USER sbtest@'%' IDENTIFIED BY '${SQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON sakila.* TO sbtest@'%';
 FLUSH PRIVILEGES;
 EOT
 
+# Installing sysbench script on server
 apt-get install sysbench -y
 tee -a /home/ubuntu/sysbench.sh <<EOT
 #!/bin/bash

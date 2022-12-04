@@ -5,18 +5,22 @@ sudo apt-get update
 mkdir -p /opt/mysqlcluster/home
 cd /opt/mysqlcluster/home
 
+# Download MySQL cluster package
 wget http://dev.mysql.com/get/Downloads/MySQL-Cluster-7.2/mysql-cluster-gpl-7.2.1-linux2.6-x86_64.tar.gz
 tar xvf mysql-cluster-gpl-7.2.1-linux2.6-x86_64.tar.gz
 ln -s mysql-cluster-gpl-7.2.1-linux2.6-x86_64 mysqlc
 
+# Env vars for mysql binaries
 tee -a /etc/profile.d/mysqlc.sh <<EOT
 export MYSQLC_HOME=/opt/mysqlcluster/home/mysqlc
 export PATH=\$MYSQLC_HOME/bin:\$PATH
 EOT
 
+# Setting env vars for current install script
 source /etc/profile.d/mysqlc.sh
 sudo apt-get update && sudo apt-get -y install libncurses5
 
+# Creating data/config/deployment folders for mysql cluster
 mkdir -p /opt/mysqlcluster/deploy
 cd /opt/mysqlcluster/deploy
 mkdir conf
@@ -24,6 +28,7 @@ mkdir mysqld_data
 mkdir ndb_data
 cd conf
 
+# Master MySQL config
 tee -a my.cnf <<EOT
 [mysqld]
 ndbcluster
@@ -35,6 +40,10 @@ port=3306
 ndb-connectstring=${MGMT_NODE_IP}
 EOT
 
+# MySQL cluster Management node config file
+# 1 NDB_MGM node
+# 3 replicas, or slaves
+# MySQL nodes for master and data nodes
 tee -a config.ini <<EOT
 [ndb_mgmd]
 hostname=${MGMT_NODE_IP}
@@ -70,22 +79,28 @@ nodeid=52
 nodeid=53
 EOT
 
+# Setup base MySQL server, base MySQL tables and databases
 cd /opt/mysqlcluster/home/mysqlc
 sudo scripts/mysql_install_db --no-defaults --datadir=/opt/mysqlcluster/deploy/mysqld_data
 
+# Starting the management node
 sudo /opt/mysqlcluster/home/mysqlc/bin/ndb_mgmd -f /opt/mysqlcluster/deploy/conf/config.ini \
                                                 --initial \
                                                 --configdir=/opt/mysqlcluster/deploy/conf
 
+# Cloning Sakila DB to be installed on the cluster
 wget https://downloads.mysql.com/docs/sakila-db.tar.gz
 
 tar -zxvf sakila-db.tar.gz
+# Changing InnoDB engine to NDB engine
 sed -i 's/InnoDB/ndb/g' /opt/mysqlcluster/home/mysqlc/sakila-db/sakila-schema.sql
 
+# Starting MySQL server
 /opt/mysqlcluster/home/mysqlc/bin/mysqld --defaults-file=/opt/mysqlcluster/deploy/conf/my.cnf --user=root &
 
 sleep 60
 
+# Setting up remote user on cluster
 tee -a /home/ubuntu/setup_user.sql <<EOT
 CREATE USER ${SQL_USER}@'%' IDENTIFIED BY '${SQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO ${SQL_USER}@'%';
@@ -93,21 +108,18 @@ USE mysql;
 DELETE FROM user WHERE user="" AND host="localhost";
 FLUSH PRIVILEGES;
 EOT
-# tee -a /home/ubuntu/install_db.sh <<EOT
-# #!/bin/bash
 
+# Change root password
 sudo /opt/mysqlcluster/home/mysqlc/bin/mysqladmin -u root password '${SQL_PASSWORD}'
 
+# Install Sakila DB and remote user
 mysql -u root -p${SQL_PASSWORD} < /opt/mysqlcluster/home/mysqlc/sakila-db/sakila-schema.sql
 mysql -u root -p${SQL_PASSWORD} < /opt/mysqlcluster/home/mysqlc/sakila-db/sakila-data.sql
 mysql -u root -p${SQL_PASSWORD} < /home/ubuntu/setup_user.sql
-# EOT
 
 rm -f /home/ubuntu/setup_user.sql
 
-# chmod +x /home/ubuntu/install_db.sh
-# chown ubuntu:ubuntu /home/ubuntu/install_db.sh
-
+# Installing sysbench script on server
 apt-get install sysbench -y
 tee -a /home/ubuntu/sysbench.sh <<EOT
 #!/bin/bash

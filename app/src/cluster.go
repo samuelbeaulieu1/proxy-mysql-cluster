@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"strconv"
@@ -19,18 +20,22 @@ type Cluster struct {
 
 type ClusterMode int
 
+// Modes: Direct hit, random, latency
 const (
 	MasterMode ClusterMode = iota
 	RandomMode
 	LatencyMode
 )
 
+// Singleton cluster
 var cluster *Cluster
 
 func GetCluster() *Cluster {
 	return cluster
 }
 
+// Read the mode from input arguments,
+// default to direct hit
 func ReadModeFromArgs() ClusterMode {
 	args := os.Args[1:]
 	if len(args) > 0 {
@@ -48,6 +53,7 @@ func ReadModeFromArgs() ClusterMode {
 	return MasterMode
 }
 
+// Setup the cluster config from input args and env vars
 func InitCluster(mode ClusterMode) {
 	rand.Seed(time.Now().UnixNano())
 
@@ -80,6 +86,7 @@ func InitCluster(mode ClusterMode) {
 	}
 }
 
+// Selecting a slave node to execute a select query based on the mode
 func (c *Cluster) SelectSlave() *Host {
 	switch c.mode {
 	case MasterMode:
@@ -93,12 +100,15 @@ func (c *Cluster) SelectSlave() *Host {
 	}
 }
 
+// Randomly select one of the slaves
 func (c *Cluster) selectRandomSlave() *Host {
 	index := rand.Intn(len(c.slaves))
 
 	return c.slaves[index]
 }
 
+// Select a the slave with the least latency from
+// ping command
 func (c *Cluster) selectLeastLatencySlave() *Host {
 	wg := sync.WaitGroup{}
 	wg.Add(len(c.slaves))
@@ -107,6 +117,7 @@ func (c *Cluster) selectLeastLatencySlave() *Host {
 	var leastLatency time.Duration
 	leastLatencyIndex := -1
 
+	// Start all on different threads
 	for index, host := range c.slaves {
 		go func(index int, host *Host) {
 			time := host.Ping()
@@ -123,5 +134,7 @@ func (c *Cluster) selectLeastLatencySlave() *Host {
 
 	wg.Wait()
 
-	return c.slaves[leastLatencyIndex]
+	slave := c.slaves[leastLatencyIndex]
+	log.Printf("Selected slave %s with latency %s\n", fmt.Sprintf("%s:%d", slave.host, slave.port), leastLatency)
+	return slave
 }

@@ -1,3 +1,4 @@
+# Custom VPC for all EC2 instances, both cluster and stand-alone
 module "vpc" {
   source = "terraform-aws-modules/vpc/aws"
 

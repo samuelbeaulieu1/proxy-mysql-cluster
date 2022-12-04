@@ -9,6 +9,7 @@ import (
 	"os/exec"
 )
 
+// Query to be executed on specified host
 type slaveQuery struct {
 	slave    *Host
 	query    string
@@ -16,18 +17,31 @@ type slaveQuery struct {
 	output   chan []byte
 }
 
+// Proxy to cluster with queries channel to be exected on cluster
 type slaveProxy struct {
 	queries    chan *slaveQuery
 	port       string
 	readWriter ReaderWriter
 }
 
+// Singleton proxy
 var slaveProxyInstance *slaveProxy
 
 func GetSlaveProxy() *slaveProxy {
 	return slaveProxyInstance
 }
 
+/*
+Start cluster proxy to listen on specified port
+
+Will listen to all incoming MySQL TCP connections
+and will wait for incoming client request from
+the channel
+
+After receiving both the TCP connection and client request,
+the request will be executed on the cluster and the response
+returned by the output channel provided
+*/
 func StartSlaveProxy(port string, readWriter ReaderWriter) {
 	slaveProxyInstance = &slaveProxy{
 		queries:    make(chan *slaveQuery),
@@ -35,13 +49,16 @@ func StartSlaveProxy(port string, readWriter ReaderWriter) {
 		readWriter: readWriter,
 	}
 
+	// Listen to incoming TCP connections
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
 		panic(err)
 	}
 
+	// Listen indefinitely for new client queries
 	for {
 		query := <-slaveProxyInstance.queries
+		// Start the MySQL client connection to communicate with the cluster
 		go slaveProxyInstance.startMysqlClient(query)
 		conn, err := ln.Accept()
 		log.Printf("New connection accepted:  [%s:%d][%s] %s\n", query.slave.host, query.slave.port, query.database, query.query)
@@ -50,10 +67,13 @@ func StartSlaveProxy(port string, readWriter ReaderWriter) {
 			continue
 		}
 
+		// After the connection is created and the query received,
+		// send the query and get the result
 		go slaveProxyInstance.Handle(conn, query)
 	}
 }
 
+// Starting the MySQL client connection to communicate with the cluster
 func (s *slaveProxy) startMysqlClient(query *slaveQuery) {
 	user := fmt.Sprintf("-u%s", query.slave.user)
 	pwd := fmt.Sprintf("-p'%s'", query.slave.password)
@@ -65,35 +85,45 @@ func (s *slaveProxy) startMysqlClient(query *slaveQuery) {
 	cmd.Run()
 }
 
+// Handling the client query on the cluster
 func (s *slaveProxy) Handle(conn net.Conn, query *slaveQuery) error {
+	// First, connect with the remote cluster node
 	mysql := ConnectRemoteMysql(query.slave.host, query.slave.port)
 
-	// Greetings from slave mysql
+	// Greetings from mysql cluster node
 	s.readWriter.ReadWrite(mysql, conn)
-	// Auth from client
+	// Auth response from client
 	s.readWriter.ReadWrite(conn, mysql)
-	// Auth response from slave mysql
+	// Auth response from mysql cluster node
 	s.readWriter.ReadWrite(mysql, conn)
-	// Query from client
+	// Send client query to mysql cluster node
 	s.readWriter.ReadWrite(conn, mysql)
 
-	// Response from mysql
+	// Response buffer containing all the packets
 	response := &bytes.Buffer{}
 
+	// Read all client queries after this point and send
+	// all to the mysql cluster node
 	go func() {
 		io.Copy(mysql, conn)
 	}()
 
+	// Read all the responses from the mysql cluster node
+	// until an EOF packet is sent, which indicates that
+	// the request is done
 	for {
 		curr, err := s.readWriter.Read(mysql)
 		if err != nil {
 			break
 		}
 
+		// Save the response in the buffer
 		response.Write(curr.Bytes())
 		conn.Write(curr.Bytes())
 	}
 
+	// At this point, the request is done and the response is saved,
+	// so we send it back with the output channel
 	query.output <- response.Bytes()
 
 	return nil

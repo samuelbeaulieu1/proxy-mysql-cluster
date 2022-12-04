@@ -5,6 +5,7 @@ import (
 	"net"
 )
 
+// Constants of MySQL protocol
 const (
 	queryCommandByte = 3
 	packetHeaderSize = 4
@@ -33,6 +34,8 @@ type ProxyReaderWriter struct {
 	ProxyWriter
 }
 
+// Read one packet from the src connection
+// return the response as a buffer
 func (r *ProxyReader) Read(src net.Conn) (*bytes.Buffer, error) {
 	buf := &bytes.Buffer{}
 	data := make([]byte, 8192)
@@ -45,12 +48,16 @@ func (r *ProxyReader) Read(src net.Conn) (*bytes.Buffer, error) {
 	return buf, nil
 }
 
+// Write a buffer to the dst connection
 func (w *ProxyWriter) Write(buf *bytes.Buffer, dst net.Conn) error {
 	_, err := dst.Write(buf.Bytes())
 
 	return err
 }
 
+// Execute a query on the MySQL server
+// Based on the MySQL packet information
+// https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_packets.html
 func (w *ProxyWriter) ExecQuery(dst net.Conn, query string) {
 	// Query length + 1 byte for command type
 	length := 1 + len(query)
@@ -71,6 +78,7 @@ func (w *ProxyWriter) ExecQuery(dst net.Conn, query string) {
 	dst.Write(data)
 }
 
+// Read one packet and write to the dst connection
 func (rw *ProxyReaderWriter) ReadWrite(src net.Conn, dst net.Conn) (*bytes.Buffer, error) {
 	buf, err := rw.Read(src)
 	if err != nil {
