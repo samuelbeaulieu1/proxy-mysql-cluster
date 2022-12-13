@@ -163,7 +163,7 @@ func (p *proxyInstance) handleClientQuery(req *bytes.Buffer) (bool, bool) {
 	// Then the reponse is returned to the inital TCP connection with the client
 	if isSelect {
 		slave := GetCluster().SelectSlave()
-		log.Printf("[%s][%s] Executing '%s'\n", slave.hostType, fmt.Sprintf("%s:%d", slave.host, slave.port), query)
+		log.Printf("[%s][%s] Executing '%s'\n", slave.hostType, slave.host, query)
 
 		// Send client request to slave
 		result := slave.HandleQuery(query, p.database)
@@ -172,7 +172,7 @@ func (p *proxyInstance) handleClientQuery(req *bytes.Buffer) (bool, bool) {
 	} else {
 		// For write requests, we execute on the master
 		master := GetCluster().Master
-		log.Printf("[%s][%s] Executing '%s'\n", master.hostType, fmt.Sprintf("%s:%d", master.host, master.port), query)
+		log.Printf("[%s][%s] Executing '%s'\n", master.hostType, master.host, query)
 
 		// Send client request to server
 		p.proxy.readWriter.Write(req, p.mysql)

@@ -80,7 +80,8 @@ module "ec2_mysql_proxy" {
     N_SLAVES                 = 3,
     DATA_NODE1_IP            = local.data_ips[0],
     DATA_NODE2_IP            = local.data_ips[1],
-    DATA_NODE3_IP            = local.data_ips[2]
+    DATA_NODE3_IP            = local.data_ips[2],
+    CLUSTER_PRIVATE_KEY      = module.key_pair.private_key_openssh
   })
 
   tags = {

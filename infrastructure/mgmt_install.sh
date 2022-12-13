@@ -68,15 +68,6 @@ nodeid=5
 
 [mysqld]
 nodeid=50
-
-[mysqld]
-nodeid=51
-
-[mysqld]
-nodeid=52
-
-[mysqld]
-nodeid=53
 EOT
 
 # Setup base MySQL server, base MySQL tables and databases

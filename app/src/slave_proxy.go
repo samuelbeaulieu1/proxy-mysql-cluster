@@ -61,7 +61,7 @@ func StartSlaveProxy(port string, readWriter ReaderWriter) {
 		// Start the MySQL client connection to communicate with the cluster
 		go slaveProxyInstance.startMysqlClient(query)
 		conn, err := ln.Accept()
-		log.Printf("New connection accepted:  [%s:%d][%s] %s\n", query.slave.host, query.slave.port, query.database, query.query)
+		log.Printf("New connection accepted: [%s] %s\n", query.database, query.query)
 		if err != nil {
 			log.Printf("Failed to accept new slave connection: %s\n", err.Error())
 			continue

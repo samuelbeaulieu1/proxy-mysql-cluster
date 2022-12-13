@@ -30,7 +30,14 @@ N_SLAVES=${N_SLAVES}
 DATA_NODE1_IP="${DATA_NODE1_IP}"
 DATA_NODE2_IP="${DATA_NODE2_IP}"
 DATA_NODE3_IP="${DATA_NODE3_IP}"
+CLUSTER_PRIVATE_KEY_PATH="/home/ubuntu/cluster.pem"
 EOT
+
+# Install private key to cluster for ssh tunnels
+tee -a /home/ubuntu/cluster.pem <<EOT
+${CLUSTER_PRIVATE_KEY}
+EOT
+sudo chmod 600 /home/ubuntu/cluster.pem
 
 # Starting the proxy with port 3306 and Direct hit mode by default
 ./run.bash -b -p 3306 -m MasterMode
