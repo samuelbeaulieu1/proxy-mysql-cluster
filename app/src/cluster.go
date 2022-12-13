@@ -64,13 +64,16 @@ func InitCluster(mode ClusterMode) {
 	slaves := []*Host{}
 	for i := 0; i < nSlaves; i++ {
 		slaveIP := os.Getenv(fmt.Sprintf("DATA_NODE%d_IP", i+1))
-		slaves = append(slaves, &Host{
+		h := &Host{
 			host:     slaveIP,
 			port:     3306,
 			user:     sqlUser,
 			password: sqlPwd,
 			hostType: "SLAVE",
-		})
+			lock:     sync.Mutex{},
+		}
+		slaves = append(slaves, h)
+		h.establishTunnel()
 	}
 
 	cluster = &Cluster{
@@ -81,9 +84,11 @@ func InitCluster(mode ClusterMode) {
 			user:     sqlUser,
 			password: sqlPwd,
 			hostType: "MASTER",
+			lock:     sync.Mutex{},
 		},
 		slaves: slaves,
 	}
+	cluster.Master.establishTunnel()
 }
 
 // Selecting a slave node to execute a select query based on the mode

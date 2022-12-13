@@ -1,9 +1,14 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/go-ping/ping"
+	"github.com/sgreben/sshtunnel"
+	"golang.org/x/crypto/ssh"
 )
 
 type Host struct {
@@ -13,6 +18,44 @@ type Host struct {
 	password string
 
 	hostType string
+
+	sshConn *ssh.Client
+	lock    sync.Mutex
+}
+
+// Pre establish the ssh tunnel connection once at startup
+func (h *Host) establishTunnel() {
+	defer func() {
+		h.lock.Unlock()
+	}()
+	h.lock.Lock()
+	if h.sshConn != nil {
+		return
+	}
+
+	address := fmt.Sprintf("%s:%d", h.host, 22)
+	conn, _ := ssh.Dial("tcp", address, h.getSshConfig())
+	h.sshConn = conn
+}
+
+func (h *Host) getSshClient() *ssh.Client {
+	return h.sshConn
+}
+
+func (h *Host) getSshConfig() *ssh.ClientConfig {
+	privateKeyPath := os.Getenv("CLUSTER_PRIVATE_KEY_PATH")
+	// Creating tunnel config first
+	authConfig := sshtunnel.ConfigAuth{
+		Keys: []sshtunnel.KeySource{{Path: &privateKeyPath}},
+	}
+	sshAuthMethods, _ := authConfig.Methods()
+	clientConfig := ssh.ClientConfig{
+		User:            "ubuntu",
+		Auth:            sshAuthMethods,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	return &clientConfig
 }
 
 // Handle a select query on a cluster node

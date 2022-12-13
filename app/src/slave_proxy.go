@@ -89,7 +89,7 @@ func (s *slaveProxy) startMysqlClient(query *slaveQuery) {
 func (s *slaveProxy) Handle(conn net.Conn, query *slaveQuery) error {
 	master := GetCluster().Master
 	// First, connect with the remote cluster node
-	mysql := ConnectRemoteMysqlSlave(master.host, master.port, query.slave.host)
+	mysql := ConnectRemoteMysqlSlave(master.host, master.port, query.slave)
 
 	// Greetings from mysql cluster node
 	s.readWriter.ReadWrite(mysql, conn)
